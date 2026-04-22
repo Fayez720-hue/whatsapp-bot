@@ -5,6 +5,11 @@ const fs = require('fs');
 const express = require('express');
 
 // ============================================
+// CONFIGURATION - Use environment variable or default
+// ============================================
+const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
+
+// ============================================
 // HEALTH CHECK SERVER FOR RAILWAY
 // ============================================
 const healthApp = express();
@@ -21,11 +26,6 @@ healthApp.get('/', (req, res) => {
 healthApp.listen(healthPort, () => {
     console.log(`✅ Health check server running on port ${healthPort}`);
 });
-
-// ============================================
-// CONFIGURATION - YOUR SHEET ID
-// ============================================
-const SHEET_ID = '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 
 // Global variable for Google Sheet
 let googleSheet = null;
@@ -55,6 +55,7 @@ async function setupGoogleSheet() {
         } 
         else {
             console.error('❌ No Google credentials found!');
+            console.error('Please set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables');
             return false;
         }
         
