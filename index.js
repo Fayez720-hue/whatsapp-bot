@@ -17,6 +17,70 @@ console.log('=============');
 const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 
 // ============================================
+// QR CODE WEB INTERFACE
+// ============================================
+let currentQR = null;
+
+healthApp.get('/qr', (req, res) => {
+    if (currentQR) {
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>WhatsApp QR Code</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        text-align: center;
+                        padding: 50px;
+                        background: #f0f0f0;
+                    }
+                    .qr-container {
+                        background: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        display: inline-block;
+                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    }
+                    img {
+                        max-width: 300px;
+                        width: 100%;
+                    }
+                    .instructions {
+                        margin-top: 20px;
+                        color: #666;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="qr-container">
+                    <h2>Scan with WhatsApp</h2>
+                    <img src="${currentQR}" alt="QR Code">
+                    <div class="instructions">
+                        <p>1. Open WhatsApp on your phone</p>
+                        <p>2. Go to Settings → Linked Devices</p>
+                        <p>3. Tap "Link a Device"</p>
+                        <p>4. Scan this QR code</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `);
+    } else {
+        res.send('<h2>Waiting for QR code...</h2><p>Bot is starting up. Refresh in a few seconds.</p>');
+    }
+});
+
+// Then in your QR handler:
+client.on('qr', (qr) => {
+    // Convert QR to a data URL for web display
+    const qrDataURL = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+    currentQR = qrDataURL;
+    console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
+    // Also keep the ASCII for logs
+    qrcode.generate(qr, { small: true });
+});
+// ============================================
 // HEALTH CHECK SERVER FOR RAILWAY
 // ============================================
 const healthApp = express();
