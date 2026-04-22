@@ -4,23 +4,24 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const fs = require('fs');
 const express = require('express');
 
-// DEBUG: Check environment variables
-console.log('=== DEBUG ===');
-console.log('GOOGLE_CLIENT_EMAIL:', process.env.GOOGLE_CLIENT_EMAIL ? 'SET' : 'NOT SET');
-console.log('GOOGLE_PRIVATE_KEY:', process.env.GOOGLE_PRIVATE_KEY ? 'SET' : 'NOT SET');
-console.log('All env vars:', Object.keys(process.env));
-console.log('=============');
+// ============================================
+// HEALTH CHECK SERVER FOR RAILWAY
+// ============================================
+const healthApp = express();
+const healthPort = process.env.PORT || 3000;
 
-// ============================================
-// CONFIGURATION - Use environment variable or default
-// ============================================
-const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
-
-// ============================================
-// QR CODE WEB INTERFACE
-// ============================================
+// QR code storage for web interface
 let currentQR = null;
 
+healthApp.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+healthApp.get('/', (req, res) => {
+    res.send('WhatsApp Bot is running!');
+});
+
+// QR code web interface
 healthApp.get('/qr', (req, res) => {
     if (currentQR) {
         res.send(`
@@ -28,6 +29,7 @@ healthApp.get('/qr', (req, res) => {
             <html>
             <head>
                 <title>WhatsApp QR Code</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     body {
                         font-family: Arial, sans-serif;
@@ -71,32 +73,15 @@ healthApp.get('/qr', (req, res) => {
     }
 });
 
-// Then in your QR handler:
-client.on('qr', (qr) => {
-    // Convert QR to a data URL for web display
-    const qrDataURL = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
-    currentQR = qrDataURL;
-    console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
-    // Also keep the ASCII for logs
-    qrcode.generate(qr, { small: true });
-});
-// ============================================
-// HEALTH CHECK SERVER FOR RAILWAY
-// ============================================
-const healthApp = express();
-const healthPort = process.env.PORT || 3000;
-
-healthApp.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-healthApp.get('/', (req, res) => {
-    res.send('WhatsApp Bot is running!');
-});
-
 healthApp.listen(healthPort, () => {
     console.log(`✅ Health check server running on port ${healthPort}`);
+    console.log(`📱 QR Code available at: https://your-app.railway.app/qr`);
 });
+
+// ============================================
+// CONFIGURATION - YOUR SHEET ID
+// ============================================
+const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 
 // Global variable for Google Sheet
 let googleSheet = null;
@@ -126,7 +111,6 @@ async function setupGoogleSheet() {
         } 
         else {
             console.error('❌ No Google credentials found!');
-            console.error('Please set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables');
             return false;
         }
         
@@ -137,14 +121,12 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
         
-        // Get the first sheet
         let sheet = doc.sheetsByIndex[0];
         if (!sheet) {
             sheet = await doc.addSheet({ title: 'WhatsApp Leads' });
             console.log('📊 Created new worksheet');
         }
         
-        // Add headers starting from column B if sheet is empty
         const rows = await sheet.getRows();
         if (rows.length === 0) {
             await sheet.setHeaderRow([
@@ -153,10 +135,9 @@ async function setupGoogleSheet() {
                 'الموبايل', // Column C
                 'التاريخ'   // Column D
             ]);
-            console.log('📋 Added headers: Column B (الاسم), Column C (الموبايل), Column D (التاريخ)');
+            console.log('📋 Added headers');
         }
         
-        // Load existing contacts to avoid duplicates
         const existingRows = await sheet.getRows();
         for (const row of existingRows) {
             const phoneNumber = row['الموبايل'];
@@ -181,25 +162,14 @@ async function setupGoogleSheet() {
 async function findLastRowWithData() {
     try {
         const rows = await googleSheet.getRows();
-        
-        if (rows.length === 0) {
-            console.log(`   No existing rows, will add at row 1`);
-            return 0;
-        }
+        if (rows.length === 0) return 0;
         
         let lastRowIndex = -1;
         for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const phone = row['الموبايل'];
-            if (phone && phone !== '') {
-                lastRowIndex = i;
-            }
+            const phone = rows[i]['الموبايل'];
+            if (phone && phone !== '') lastRowIndex = i;
         }
-        
-        const nextRowIndex = lastRowIndex + 1;
-        console.log(`   Last data row: ${lastRowIndex + 1}, next empty row: ${nextRowIndex + 1}`);
-        return nextRowIndex;
-        
+        return lastRowIndex + 1;
     } catch (error) {
         console.error('Error finding last row:', error.message);
         return null;
@@ -207,65 +177,38 @@ async function findLastRowWithData() {
 }
 
 // ============================================
-// SAVE NEW CONTACT AFTER LAST ENTRY IN COLUMN C
+// SAVE NEW CONTACT
 // ============================================
 async function saveNewContact(contactName, phoneNumber) {
-    if (!googleSheet) {
-        console.log('⚠️ Google Sheet not ready');
-        return false;
-    }
-    
+    if (!googleSheet) return false;
     if (knownContacts.has(phoneNumber)) {
         console.log(`⏭️ Contact already exists: ${contactName} (${phoneNumber})`);
         return false;
     }
     
     try {
-        const now = new Date();
-        const date = now.toLocaleDateString('ar-EG');
+        const date = new Date().toLocaleDateString('ar-EG');
         const targetRowIndex = await findLastRowWithData();
-        
-        if (targetRowIndex === null) {
-            console.log('❌ Could not find target row');
-            return false;
-        }
+        if (targetRowIndex === null) return false;
         
         const rows = await googleSheet.getRows();
         
         if (targetRowIndex < rows.length) {
             const existingRow = rows[targetRowIndex];
-            const existingPhone = existingRow['الموبايل'];
-            
-            if (!existingPhone || existingPhone === '') {
+            if (!existingRow['الموبايل'] || existingRow['الموبايل'] === '') {
                 existingRow['الاسم'] = contactName;
                 existingRow['الموبايل'] = phoneNumber;
                 existingRow['التاريخ'] = date;
                 await existingRow.save();
-                console.log(`✅ NEW CONTACT SAVED in existing row ${targetRowIndex + 2}:`);
             } else {
-                await googleSheet.addRow({
-                    '': '',
-                    'الاسم': contactName,
-                    'الموبايل': phoneNumber,
-                    'التاريخ': date
-                });
-                console.log(`✅ NEW CONTACT SAVED as new row ${targetRowIndex + 2}:`);
+                await googleSheet.addRow({ '': '', 'الاسم': contactName, 'الموبايل': phoneNumber, 'التاريخ': date });
             }
         } else {
-            await googleSheet.addRow({
-                '': '',
-                'الاسم': contactName,
-                'الموبايل': phoneNumber,
-                'التاريخ': date
-            });
-            console.log(`✅ NEW CONTACT SAVED as new row ${targetRowIndex + 2}:`);
+            await googleSheet.addRow({ '': '', 'الاسم': contactName, 'الموبايل': phoneNumber, 'التاريخ': date });
         }
         
         knownContacts.add(phoneNumber);
-        
-        console.log(`   👤 Name (Column B): ${contactName}`);
-        console.log(`   📱 Phone (Column C): ${phoneNumber}`);
-        console.log(`   📅 Date (Column D): ${date}`);
+        console.log(`✅ NEW CONTACT SAVED: ${contactName} (${phoneNumber}) - ${date}`);
         return true;
     } catch (error) {
         console.error('❌ Save error:', error.message);
@@ -283,7 +226,7 @@ function extractPhoneNumber(contact) {
 }
 
 // ============================================
-// WHATSAPP SETUP - RAILWAY OPTIMIZED
+// WHATSAPP SETUP
 // ============================================
 async function setupWhatsApp() {
     console.log('\n📱 Starting WhatsApp client...');
@@ -305,6 +248,9 @@ async function setupWhatsApp() {
     });
     
     client.on('qr', (qr) => {
+        // Convert QR to a data URL for web display
+        currentQR = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+        console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
         console.log('\n' + '='.repeat(50));
         console.log('📱 SCAN THIS QR CODE WITH WHATSAPP:');
         console.log('='.repeat(50));
@@ -313,7 +259,7 @@ async function setupWhatsApp() {
         console.log('1. Open WhatsApp on your phone');
         console.log('2. Go to Settings → Linked Devices');
         console.log('3. Tap "Link a Device"');
-        console.log('4. Scan the QR code above');
+        console.log('4. Scan the QR code above OR visit /qr endpoint');
         console.log('='.repeat(50) + '\n');
     });
     
@@ -331,7 +277,6 @@ async function setupWhatsApp() {
             const contact = await message.getContact();
             const phoneNumber = extractPhoneNumber(contact);
             const contactName = contact.pushname || contact.name || phoneNumber;
-            
             console.log(`\n📨 Message from: ${contactName} (${phoneNumber})`);
             await saveNewContact(contactName, phoneNumber);
         } catch (error) {
