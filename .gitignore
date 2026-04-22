@@ -3,4 +3,4 @@ session-data/
 credentials.json
 .env
 *.log
-.DS_Store
+.DS_Storesession-data/ 
