@@ -38,18 +38,26 @@ const knownContacts = new Set();
 // ============================================
 async function setupGoogleSheet() {
     try {
-        // Check if credentials file exists
-        if (!fs.existsSync('./credentials.json')) {
-            console.error('❌ credentials.json file not found!');
-            console.log('Please place credentials.json in:');
-            console.log('/app/credentials.json');
+        let creds;
+        
+        // Use environment variables first (for Railway)
+        if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+            console.log('📊 Using Google credentials from environment variables');
+            creds = {
+                client_email: process.env.GOOGLE_CLIENT_EMAIL,
+                private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+            };
+        } 
+        // Fallback to file (for local development)
+        else if (fs.existsSync('./credentials.json')) {
+            console.log('📊 Using Google credentials from file');
+            creds = JSON.parse(fs.readFileSync('./credentials.json', 'utf8'));
+        } 
+        else {
+            console.error('❌ No Google credentials found!');
             return false;
         }
         
-        // Load credentials
-        const creds = JSON.parse(fs.readFileSync('./credentials.json', 'utf8'));
-        
-        // Connect to sheet
         const doc = new GoogleSpreadsheet(SHEET_ID);
         await doc.useServiceAccountAuth({
             client_email: creds.client_email,
@@ -211,10 +219,10 @@ async function setupWhatsApp() {
     const client = new Client({
         authStrategy: new LocalAuth({
             clientId: 'whatsapp-bot',
-            dataPath: '/app/session-data'  // CRITICAL: Railway volume path
+            dataPath: '/app/session-data'
         }),
         puppeteer: {
-            headless: true,  // CRITICAL: Must be true on Railway
+            headless: true,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
