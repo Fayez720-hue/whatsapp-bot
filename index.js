@@ -4,6 +4,13 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const fs = require('fs');
 const express = require('express');
 
+// DEBUG: Check environment variables
+console.log('=== DEBUG ===');
+console.log('GOOGLE_CLIENT_EMAIL:', process.env.GOOGLE_CLIENT_EMAIL ? 'SET' : 'NOT SET');
+console.log('GOOGLE_PRIVATE_KEY:', process.env.GOOGLE_PRIVATE_KEY ? 'SET' : 'NOT SET');
+console.log('All env vars:', Object.keys(process.env));
+console.log('=============');
+
 // ============================================
 // CONFIGURATION - Use environment variable or default
 // ============================================
