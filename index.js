@@ -154,51 +154,68 @@ async function saveNewContact(contactName, phoneNumber) {
 }
 
 // ============================================
-// EXTRACT PHONE NUMBER RELIABLY (FIXES WRONG NUMBERS)
+// VALIDATE PHONE NUMBER
 // ============================================
-async function extractPhoneNumber(client, message, myNumber) {
+function isValidPhoneNumber(num) {
+    // Reject numbers starting with '1' or those too short/long
+    // Real phone numbers have country codes (e.g., 20 for Egypt)
+    return num && num.length >= 9 && num.length <= 15 && !num.startsWith('1');
+}
+
+// ============================================
+// EXTRACT PHONE NUMBER RELIABLY
+// ============================================
+async function extractPhoneNumber(client, message) {
     try {
-        // Method 1: Get from message sender directly
-        let senderRaw = message.from;
-        if (senderRaw && senderRaw.includes('@')) {
-            const candidate = senderRaw.split('@')[0].replace(/[^0-9]/g, '');
-            // If it's a valid number length and not the internal format, use it
-            if (candidate && candidate.length >= 9 && candidate.length <= 15 && !candidate.startsWith('1')) {
-                return candidate;
-            }
-        }
-        
-        // Method 2: Get from contact with fallbacks
-        let contact = null;
+        let myNumber = 'unknown';
         try {
-            contact = await client.getContactById(message.from);
-        } catch (err) {
-            console.log('Could not fetch contact, using fallback');
+            const info = await client.info;
+            myNumber = info.wid.user;
+        } catch (err) {}
+        
+        let senderNumber = null;
+        
+        // Check if it's the bot itself
+        if (message.from && message.from.includes(myNumber)) {
+            senderNumber = myNumber;
+        } else {
+            try {
+                // ATTEMPT 1: Try to get the contact object
+                const contact = await client.getContactById(message.from);
+                // For Business accounts, contact.number is often undefined
+                if (contact.number && isValidPhoneNumber(contact.number.replace(/[^0-9]/g, ''))) {
+                    senderNumber = contact.number.replace(/[^0-9]/g, '');
+                } else if (contact.id && contact.id.user && isValidPhoneNumber(contact.id.user.split('@')[0].replace(/[^0-9]/g, ''))) {
+                    senderNumber = contact.id.user.split('@')[0].replace(/[^0-9]/g, '');
+                } else {
+                    // Fallback to parsing the string
+                    senderNumber = (message.author || message.from).split('@')[0].replace(/[^0-9]/g, '');
+                }
+            } catch (e) {
+                // ATTEMPT 2: Fallback to parsing the string
+                senderNumber = (message.author || message.from).split('@')[0].replace(/[^0-9]/g, '');
+            }
         }
         
-        if (contact) {
-            // Try contact.number
-            if (contact.number) {
-                let cleaned = contact.number.replace(/[^0-9]/g, '');
-                if (cleaned && cleaned.length >= 9) return cleaned;
-            }
-            // Try contact.id.user
-            if (contact.id && contact.id.user) {
-                let cleaned = contact.id.user.split('@')[0].replace(/[^0-9]/g, '');
-                if (cleaned && cleaned.length >= 9 && !cleaned.startsWith('1')) return cleaned;
-            }
+        // Validate the number
+        if (senderNumber && isValidPhoneNumber(senderNumber)) {
+            return senderNumber;
         }
         
-        // Method 3: Infer from chat
+        // ATTEMPT 3: Try from chat as last resort
         try {
             const chat = await message.getChat();
             if (chat && !chat.isGroup && chat.id && chat.id.user) {
                 let cleaned = chat.id.user.split('@')[0].replace(/[^0-9]/g, '');
-                if (cleaned && cleaned.length >= 9 && !cleaned.startsWith('1')) return cleaned;
+                if (cleaned && isValidPhoneNumber(cleaned)) {
+                    return cleaned;
+                }
             }
         } catch (err) {}
         
+        console.log(`⚠️ Could not extract valid phone number from: ${message.from}`);
         return null;
+        
     } catch (error) {
         console.error('Error extracting phone number:', error);
         return null;
@@ -256,11 +273,9 @@ async function setupWhatsApp() {
         console.log('='.repeat(50));
         
         // Get and display bot's own number
-        let myNumber = 'unknown';
         try {
             const info = await client.info;
-            myNumber = info.wid.user;
-            console.log(`🤖 Bot connected as: ${myNumber}`);
+            console.log(`🤖 Bot connected as: ${info.wid.user}`);
         } catch (err) {}
         
         console.log('📡 Monitoring for NEW contacts continuously...');
@@ -282,15 +297,8 @@ async function setupWhatsApp() {
             
             lastMessageTime = Date.now();
             
-            // Get bot's own number for comparison
-            let myNumber = 'unknown';
-            try {
-                const info = await client.info;
-                myNumber = info.wid.user;
-            } catch (err) {}
-            
             // Extract phone number using reliable method
-            let phoneNumber = await extractPhoneNumber(client, message, myNumber);
+            let phoneNumber = await extractPhoneNumber(client, message);
             
             // Get contact name safely
             let contactName = phoneNumber || 'Unknown';
@@ -302,7 +310,7 @@ async function setupWhatsApp() {
             }
             
             if (!phoneNumber) {
-                console.log(`⚠️ Could not extract phone number for message from: ${message.from}`);
+                console.log(`⚠️ Could not extract phone number from: ${message.from}`);
                 return;
             }
             
