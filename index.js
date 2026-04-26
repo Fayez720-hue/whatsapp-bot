@@ -121,34 +121,29 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
         
-        // ========== USE THE مبيعات TAB ==========
         const TARGET_TAB_NAME = 'مبيعات';
         
-        // Try to get sheet by name
         let sheet = doc.sheetsByTitle[TARGET_TAB_NAME];
         
-        // If not found, use first tab
         if (!sheet) {
             console.log(`📊 Tab "${TARGET_TAB_NAME}" not found, using first tab`);
             sheet = doc.sheetsByIndex[0];
         }
         
-        // If still no sheet, create it
         if (!sheet) {
             sheet = await doc.addSheet({ title: TARGET_TAB_NAME });
             console.log(`📊 Created new worksheet: ${TARGET_TAB_NAME}`);
         }
         
         console.log(`📊 Using tab: ${sheet.title}`);
-        // ========== END OF CHANGE ==========
         
         const rows = await sheet.getRows();
         if (rows.length === 0) {
             await sheet.setHeaderRow([
-                'رقم',       // Column A - row number
-                'الاسم',     // Column B
-                'الموبايل',  // Column C
-                'التاريخ'    // Column D
+                'رقم',
+                'الاسم',
+                'الموبايل',
+                'التاريخ'
             ]);
             console.log('📋 Added headers');
         }
@@ -170,9 +165,7 @@ async function setupGoogleSheet() {
         return false;
     }
 }
-// ============================================
-// FIND LAST ROW WITH DATA IN COLUMN C
-// ============================================
+
 async function findLastRowWithData() {
     try {
         const rows = await googleSheet.getRows();
@@ -190,9 +183,6 @@ async function findLastRowWithData() {
     }
 }
 
-// ============================================
-// SAVE NEW CONTACT
-// ============================================
 async function saveNewContact(contactName, phoneNumber) {
     if (!googleSheet) return false;
     if (knownContacts.has(phoneNumber.trim())) {
@@ -230,18 +220,12 @@ async function saveNewContact(contactName, phoneNumber) {
     }
 }
 
-// ============================================
-// EXTRACT PHONE NUMBER
-// ============================================
 function extractPhoneNumber(contact) {
     if (contact.number) return contact.number;
     if (contact.id && contact.id.user) return contact.id.user;
     return 'Unknown';
 }
 
-// ============================================
-// WHATSAPP SETUP
-// ============================================
 async function setupWhatsApp() {
     console.log('\n📱 Starting WhatsApp client...');
     
@@ -262,7 +246,6 @@ async function setupWhatsApp() {
     });
     
     client.on('qr', (qr) => {
-        // Convert QR to a data URL for web display
         currentQR = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
         console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
         console.log('\n' + '='.repeat(50));
@@ -306,9 +289,6 @@ async function setupWhatsApp() {
     return client;
 }
 
-// ============================================
-// MAIN FUNCTION
-// ============================================
 async function main() {
     console.log('\n' + '='.repeat(50));
     console.log('🚀 WHATSAPP BOT - RAILWAY DEPLOYMENT');
