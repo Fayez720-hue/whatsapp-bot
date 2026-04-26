@@ -81,7 +81,7 @@ healthApp.listen(healthPort, () => {
 // ============================================
 // CONFIGURATION - YOUR SHEET ID
 // ============================================
-const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
+const SHEET_ID = process.env.SHEET_ID || '1-eFIwHeqNFvf9N1Hym_Y6WCbn9jnmNCGpwPgJwbqQZk';
 
 // Global variable for Google Sheet
 let googleSheet = null;
@@ -121,11 +121,26 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
         
-        let sheet = doc.sheetsByIndex[0];
+        // ========== CHANGE THIS SECTION ==========
+        const TARGET_TAB_NAME = 'مبيعات'; // ← CHANGE to your tab name
+        
+        // Try to get sheet by name
+        let sheet = doc.sheetsByTitle[TARGET_TAB_NAME];
+        
+        // If not found, use first tab
         if (!sheet) {
-            sheet = await doc.addSheet({ title: 'WhatsApp Leads' });
-            console.log('📊 Created new worksheet');
+            console.log(`📊 Tab "${TARGET_TAB_NAME}" not found, using first tab`);
+            sheet = doc.sheetsByIndex[0];
         }
+        
+        // If still no sheet, create it
+        if (!sheet) {
+            sheet = await doc.addSheet({ title: TARGET_TAB_NAME });
+            console.log(`📊 Created new worksheet: ${TARGET_TAB_NAME}`);
+        }
+        
+        console.log(`📊 Using tab: ${sheet.title}`);
+        // ========== END OF CHANGE ==========
         
         const rows = await sheet.getRows();
         if (rows.length === 0) {
@@ -155,7 +170,6 @@ async function setupGoogleSheet() {
         return false;
     }
 }
-
 // ============================================
 // FIND LAST ROW WITH DATA IN COLUMN C
 // ============================================
