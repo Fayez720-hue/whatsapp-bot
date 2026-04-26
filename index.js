@@ -96,7 +96,6 @@ async function setupGoogleSheet() {
     try {
         let creds;
         
-        // Use environment variables first (for Railway)
         if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
             console.log('📊 Using Google credentials from environment variables');
             creds = {
@@ -104,7 +103,6 @@ async function setupGoogleSheet() {
                 private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
             };
         } 
-        // Fallback to file (for local development)
         else if (fs.existsSync('./credentials.json')) {
             console.log('📊 Using Google credentials from file');
             creds = JSON.parse(fs.readFileSync('./credentials.json', 'utf8'));
@@ -121,28 +119,22 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
 
-        // ========== SHOW WHICH SHEET WE'RE CONNECTED TO ==========
         console.log(`📊 Connected to sheet: "${doc.title}"`);
         console.log(`📊 Sheet URL: https://docs.google.com/spreadsheets/d/${SHEET_ID}`);
         console.log(`📊 Sheet ID: ${SHEET_ID}`);
         
-        // ========== LIST ALL AVAILABLE TABS ==========
         console.log('📑 Available tabs in this sheet:');
         for (let i = 0; i < doc.sheetsByIndex.length; i++) {
             const sheetTab = doc.sheetsByIndex[i];
             console.log(`   ${i + 1}. "${sheetTab.title}"`);
         }
         
-        // ========== JUST USE THE FIRST TAB ==========
         let sheet = doc.sheetsByIndex[0];
         console.log(`📊 Using tab: "${sheet.title}"`);
         
-        // Check if the sheet has the correct headers
         const rows = await sheet.getRows();
         
-        // If sheet is empty OR doesn't have the phone column, set headers
         if (rows.length === 0 || (rows.length > 0 && !rows[0].hasOwnProperty('الموبايل'))) {
-            // Clear existing headers if any
             if (rows.length > 0 && sheet.headerValues.length > 0) {
                 console.log('📋 Updating headers...');
             }
@@ -155,7 +147,6 @@ async function setupGoogleSheet() {
             console.log('📋 Set headers: رقم, الاسم, الموبايل, التاريخ');
         }
         
-        // Load existing contacts
         const existingRows = await sheet.getRows();
         for (const row of existingRows) {
             const phoneNumber = row['الموبايل'];
@@ -174,23 +165,6 @@ async function setupGoogleSheet() {
     }
 }
 
-async function findLastRowWithData() {
-    try {
-        const rows = await googleSheet.getRows();
-        if (rows.length === 0) return 0;
-        
-        let lastRowIndex = -1;
-        for (let i = 0; i < rows.length; i++) {
-            const phone = rows[i]['الموبايل'];
-            if (phone && phone !== '') lastRowIndex = i;
-        }
-        return lastRowIndex + 1;
-    } catch (error) {
-        console.error('Error finding last row:', error.message);
-        return null;
-    }
-}
-
 async function saveNewContact(contactName, phoneNumber) {
     if (!googleSheet) return false;
     if (knownContacts.has(phoneNumber.trim())) {
@@ -201,7 +175,6 @@ async function saveNewContact(contactName, phoneNumber) {
     try {
         const date = new Date().toLocaleDateString('ar-EG');
         
-        // Simply add a new row - Google Sheets API handles finding the next empty row
         await googleSheet.addRow({
             'رقم': '',
             'الاسم': contactName,
@@ -216,12 +189,6 @@ async function saveNewContact(contactName, phoneNumber) {
         console.error('❌ Save error:', error.message);
         return false;
     }
-}
-
-function extractPhoneNumber(contact) {
-    if (contact.number) return contact.number;
-    if (contact.id && contact.id.user) return contact.id.user;
-    return 'Unknown';
 }
 
 async function setupWhatsApp() {
@@ -248,7 +215,6 @@ async function setupWhatsApp() {
                 '--disable-gpu'
             ]
         },
-        // Add these to bypass the version cache issue
         webVersionCache: {
             type: 'remote',
             remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.51.html',
@@ -281,10 +247,27 @@ async function setupWhatsApp() {
     
     client.on('message', async (message) => {
         try {
+            // Get phone number directly from the message's 'from' field
+            const from = message.from;
+            let phoneNumber = from;
+            
+            // Remove @c.us or any other suffix
+            if (phoneNumber && phoneNumber.includes('@')) {
+                phoneNumber = phoneNumber.split('@')[0];
+            }
+            
+            // Skip status broadcasts
+            if (phoneNumber === 'status' || !phoneNumber) {
+                return;
+            }
+            
+            // Get contact info for the name
             const contact = await message.getContact();
-            const phoneNumber = extractPhoneNumber(contact);
             const contactName = contact.pushname || contact.name || phoneNumber;
+            
             console.log(`\n📨 Message from: ${contactName} (${phoneNumber})`);
+            console.log(`📝 Message body: "${message.body.substring(0, 100)}"`);
+            
             await saveNewContact(contactName, phoneNumber);
         } catch (error) {
             console.error('Message processing error:', error);
