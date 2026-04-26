@@ -81,7 +81,7 @@ healthApp.listen(healthPort, () => {
 // ============================================
 // CONFIGURATION - YOUR SHEET ID
 // ============================================
-const SHEET_ID = process.env.SHEET_ID || '1-eFIwHeqNFvf9N1Hym_Y6WCbn9jnmNCGpwPgJwbqQZk';
+const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 
 // Global variable for Google Sheet
 let googleSheet = null;
