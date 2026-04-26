@@ -146,6 +146,50 @@ async function saveNewContact(contactName, phoneNumber) {
 }
 
 // ============================================
+// EXTRACT PHONE NUMBER - ADD THIS FUNCTION HERE
+// ============================================
+async function extractPhoneNumber(client, message) {
+    try {
+        // 1. Get your bot's own number first
+        const myNumber = client.info?.wid?.user || 'unknown';
+        let senderNumber = 'unknown';
+
+        // 2. Check if the message is from the bot itself
+        if (message.from?.includes(myNumber) || message.from === client.info?.wid?._serialized) {
+            senderNumber = myNumber;
+        } else {
+            try {
+                // 3. Attempt to get the contact
+                const contact = await client.getContactById(message.from);
+                
+                // 4. THE CRITICAL FIX: If contact.number fails, fall back to parsing message.from
+                senderNumber = contact.number || (message.author || message.from).split('@')[0];
+            } catch (e) {
+                // 5. Ultimate fallback: parse the string directly
+                senderNumber = (message.author || message.from).split('@')[0];
+            }
+        }
+        
+        // 6. Clean the number (remove any non-digit characters)
+        let cleanedNumber = senderNumber.replace(/[^0-9]/g, '');
+        
+        // 7. Log which method succeeded
+        if (cleanedNumber && cleanedNumber.length >= 9 && !cleanedNumber.startsWith('1')) {
+            console.log(`✅ Extracted number: ${cleanedNumber} (Source: ${senderNumber === cleanedNumber ? 'Parsed from string' : 'From contact object'})`);
+            return cleanedNumber;
+        }
+        
+        console.log(`⚠️ Could not extract valid number. Raw: ${senderNumber}, Cleaned: ${cleanedNumber}`);
+        return null;
+        
+    } catch (error) {
+        console.error('Error in extractPhoneNumber:', error);
+        return null;
+    }
+}
+
+
+// ============================================
 // WHATSAPP SETUP
 // ============================================
 async function setupWhatsApp() {
@@ -187,7 +231,7 @@ async function setupWhatsApp() {
         console.log(`📡 Waiting for messages...\n`);
     });
     
-    // MAIN MESSAGE HANDLER - THE SIMPLEST APPROACH
+       // MAIN MESSAGE HANDLER - USING extractPhoneNumber FUNCTION
     client.on('message', async (message) => {
         try {
             // Skip status messages
@@ -196,17 +240,13 @@ async function setupWhatsApp() {
             // Skip messages from the bot itself
             if (myBotNumber && message.from.includes(myBotNumber)) return;
             
-            // THE KEY FIX: Extract number directly from message.from
-            // This is the most reliable method according to the library's documentation
-            let rawNumber = message.from;
+            // CALL YOUR extractPhoneNumber FUNCTION HERE
+            let phoneNumber = await extractPhoneNumber(client, message);
             
-            // Remove everything after @ (usually @c.us)
-            if (rawNumber.includes('@')) {
-                rawNumber = rawNumber.split('@')[0];
+            if (!phoneNumber) {
+                console.log(`⚠️ Could not extract phone number from: ${message.from}`);
+                return;
             }
-            
-            // Keep only digits
-            let phoneNumber = rawNumber.replace(/[^0-9]/g, '');
             
             // Get contact name
             let contactName = phoneNumber;
@@ -218,16 +258,10 @@ async function setupWhatsApp() {
             }
             
             console.log(`\n📨 Message from: ${contactName}`);
-            console.log(`📞 Raw number from message.from: ${message.from}`);
             console.log(`📞 Extracted phone number: ${phoneNumber}`);
             console.log(`📝 Message: "${message.body?.substring(0, 100) || ''}"`);
             
-            // Validate phone number - Egyptian numbers start with 20 or 01
-            if (phoneNumber && phoneNumber.length >= 9) {
-                await saveNewContact(contactName, phoneNumber);
-            } else {
-                console.log(`⚠️ Invalid number format: ${phoneNumber}`);
-            }
+            await saveNewContact(contactName, phoneNumber);
             
         } catch (error) {
             console.error('Message processing error:', error.message);
