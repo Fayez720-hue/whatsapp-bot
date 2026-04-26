@@ -1,7 +1,8 @@
 FROM node:18-slim
 
-# Install Chrome for Puppeteer
+# Install git AND Chrome for Puppeteer
 RUN apt-get update && apt-get install -y \
+    git \
     chromium \
     fonts-liberation \
     libasound2 \
@@ -32,7 +33,6 @@ COPY . .
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Create directory for session data
 RUN mkdir -p /app/session-data
 
 CMD ["npm", "start"]
