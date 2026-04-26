@@ -121,8 +121,8 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
         
-        // ========== CHANGE THIS SECTION ==========
-        const TARGET_TAB_NAME = 'مبيعات'; // ← CHANGE to your tab name
+        // ========== USE THE مبيعات TAB ==========
+        const TARGET_TAB_NAME = 'مبيعات';
         
         // Try to get sheet by name
         let sheet = doc.sheetsByTitle[TARGET_TAB_NAME];
@@ -133,7 +133,6 @@ async function setupGoogleSheet() {
             sheet = doc.sheetsByIndex[0];
         }
         
-<<<<<<< HEAD
         // If still no sheet, create it
         if (!sheet) {
             sheet = await doc.addSheet({ title: TARGET_TAB_NAME });
@@ -145,15 +144,6 @@ async function setupGoogleSheet() {
         
         const rows = await sheet.getRows();
         if (rows.length === 0) {
-=======
-        // Load the header row to check if headers already exist
-        await sheet.loadHeaderRow();
-        const headers = sheet.headerValues;
-        const hasHeaders = headers && headers.some(h => h && h.trim() !== '');
-
-        if (!hasHeaders) {
-            // First run: sheet is empty, set the header row
->>>>>>> 8e5b4d787a21b468cba178ee385aa388e3a485bc
             await sheet.setHeaderRow([
                 'رقم',       // Column A - row number
                 'الاسم',     // Column B
@@ -162,8 +152,7 @@ async function setupGoogleSheet() {
             ]);
             console.log('📋 Added headers');
         }
-
-        // Load existing data rows and populate knownContacts
+        
         const existingRows = await sheet.getRows();
         for (const row of existingRows) {
             const phoneNumber = row['الموبايل'];
