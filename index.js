@@ -217,6 +217,7 @@ async function saveNewContact(contactName, phoneNumber) {
         return false;
     }
 }
+
 function extractPhoneNumber(contact) {
     if (contact.number) return contact.number;
     if (contact.id && contact.id.user) return contact.id.user;
@@ -224,6 +225,13 @@ function extractPhoneNumber(contact) {
 }
 
 async function setupWhatsApp() {
+    // Clear session on startup
+    const sessionPath = '/app/session-data';
+    if (fs.existsSync(sessionPath)) {
+        console.log('🗑️ Clearing old session data...');
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+    }
+    
     console.log('\n📱 Starting WhatsApp client...');
     
     const client = new Client({
@@ -290,6 +298,7 @@ async function setupWhatsApp() {
     await client.initialize();
     return client;
 }
+
 async function main() {
     console.log('\n' + '='.repeat(50));
     console.log('🚀 WHATSAPP BOT - RAILWAY DEPLOYMENT');
