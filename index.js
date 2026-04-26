@@ -58,6 +58,7 @@ healthApp.listen(healthPort, () => {
 const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 let googleSheet = null;
 const knownContacts = new Set();
+let myBotNumber = null;
 
 // ============================================
 // GOOGLE SHEETS SETUP
@@ -145,7 +146,7 @@ async function saveNewContact(contactName, phoneNumber) {
 }
 
 // ============================================
-// WHATSAPP SETUP - SIMPLIFIED
+// WHATSAPP SETUP
 // ============================================
 async function setupWhatsApp() {
     console.log('\n📱 Starting WhatsApp client...');
@@ -177,39 +178,59 @@ async function setupWhatsApp() {
         console.log(`\n📱 Or visit: https://your-app.railway.app/qr\n`);
     });
     
-    client.on('ready', () => {
-        console.log('\n✅ WHATSAPP BOT IS READY!');
-        console.log('📡 Waiting for messages...\n');
+    client.on('ready', async () => {
+        // Get bot's own number
+        const info = await client.info;
+        myBotNumber = info.wid.user;
+        console.log(`\n✅ WHATSAPP BOT IS READY!`);
+        console.log(`🤖 Bot number: ${myBotNumber}`);
+        console.log(`📡 Waiting for messages...\n`);
     });
     
-    // SIMPLE MESSAGE HANDLER - Get number directly from message.from
+    // MAIN MESSAGE HANDLER - THE SIMPLEST APPROACH
     client.on('message', async (message) => {
         try {
             // Skip status messages
             if (message.from === 'status@broadcast') return;
             
-            // Extract phone number - remove @c.us suffix
-            let phoneNumber = message.from;
-            if (phoneNumber.includes('@')) {
-                phoneNumber = phoneNumber.split('@')[0];
+            // Skip messages from the bot itself
+            if (myBotNumber && message.from.includes(myBotNumber)) return;
+            
+            // THE KEY FIX: Extract number directly from message.from
+            // This is the most reliable method according to the library's documentation
+            let rawNumber = message.from;
+            
+            // Remove everything after @ (usually @c.us)
+            if (rawNumber.includes('@')) {
+                rawNumber = rawNumber.split('@')[0];
             }
+            
+            // Keep only digits
+            let phoneNumber = rawNumber.replace(/[^0-9]/g, '');
             
             // Get contact name
             let contactName = phoneNumber;
             try {
                 const contact = await message.getContact();
                 contactName = contact.pushname || contact.name || phoneNumber;
-            } catch (err) {}
-            
-            console.log(`\n📨 Message from: ${contactName} (${phoneNumber})`);
-            if (message.body) {
-                console.log(`📝 Message: "${message.body.substring(0, 100)}"`);
+            } catch (err) {
+                console.log('Could not get contact name, using number');
             }
             
-            await saveNewContact(contactName, phoneNumber);
+            console.log(`\n📨 Message from: ${contactName}`);
+            console.log(`📞 Raw number from message.from: ${message.from}`);
+            console.log(`📞 Extracted phone number: ${phoneNumber}`);
+            console.log(`📝 Message: "${message.body?.substring(0, 100) || ''}"`);
+            
+            // Validate phone number - Egyptian numbers start with 20 or 01
+            if (phoneNumber && phoneNumber.length >= 9) {
+                await saveNewContact(contactName, phoneNumber);
+            } else {
+                console.log(`⚠️ Invalid number format: ${phoneNumber}`);
+            }
             
         } catch (error) {
-            console.error('Error:', error.message);
+            console.error('Message processing error:', error.message);
         }
     });
     
