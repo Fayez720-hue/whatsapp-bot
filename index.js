@@ -5,7 +5,7 @@ const fs = require('fs');
 const express = require('express');
 
 // ============================================
-// HEALTH CHECK SERVER FOR RAILWAY
+// HEALTH CHECK SERVER
 // ============================================
 const healthApp = express();
 const healthPort = process.env.PORT || 3000;
@@ -28,27 +28,10 @@ healthApp.get('/qr', (req, res) => {
                 <title>WhatsApp QR Code</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        text-align: center;
-                        padding: 50px;
-                        background: #f0f0f0;
-                    }
-                    .qr-container {
-                        background: white;
-                        padding: 30px;
-                        border-radius: 10px;
-                        display: inline-block;
-                        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                    }
-                    img {
-                        max-width: 300px;
-                        width: 100%;
-                    }
-                    .instructions {
-                        margin-top: 20px;
-                        color: #666;
-                    }
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f0f0f0; }
+                    .qr-container { background: white; padding: 30px; border-radius: 10px; display: inline-block; }
+                    img { max-width: 300px; }
+                    .instructions { margin-top: 20px; color: #666; }
                 </style>
             </head>
             <body>
@@ -80,6 +63,10 @@ healthApp.listen(healthPort, () => {
 const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 let googleSheet = null;
 const knownContacts = new Set();
+
+// Heartbeat to monitor bot status
+let heartbeatInterval = null;
+let lastMessageTime = Date.now();
 
 // ============================================
 // GOOGLE SHEETS SETUP
@@ -167,10 +154,71 @@ async function saveNewContact(contactName, phoneNumber) {
 }
 
 // ============================================
-// WHATSAPP SETUP
+// EXTRACT PHONE NUMBER RELIABLY (FIXES WRONG NUMBERS)
+// ============================================
+async function extractPhoneNumber(client, message, myNumber) {
+    try {
+        // Method 1: Get from message sender directly
+        let senderRaw = message.from;
+        if (senderRaw && senderRaw.includes('@')) {
+            const candidate = senderRaw.split('@')[0].replace(/[^0-9]/g, '');
+            // If it's a valid number length and not the internal format, use it
+            if (candidate && candidate.length >= 9 && candidate.length <= 15 && !candidate.startsWith('1')) {
+                return candidate;
+            }
+        }
+        
+        // Method 2: Get from contact with fallbacks
+        let contact = null;
+        try {
+            contact = await client.getContactById(message.from);
+        } catch (err) {
+            console.log('Could not fetch contact, using fallback');
+        }
+        
+        if (contact) {
+            // Try contact.number
+            if (contact.number) {
+                let cleaned = contact.number.replace(/[^0-9]/g, '');
+                if (cleaned && cleaned.length >= 9) return cleaned;
+            }
+            // Try contact.id.user
+            if (contact.id && contact.id.user) {
+                let cleaned = contact.id.user.split('@')[0].replace(/[^0-9]/g, '');
+                if (cleaned && cleaned.length >= 9 && !cleaned.startsWith('1')) return cleaned;
+            }
+        }
+        
+        // Method 3: Infer from chat
+        try {
+            const chat = await message.getChat();
+            if (chat && !chat.isGroup && chat.id && chat.id.user) {
+                let cleaned = chat.id.user.split('@')[0].replace(/[^0-9]/g, '');
+                if (cleaned && cleaned.length >= 9 && !cleaned.startsWith('1')) return cleaned;
+            }
+        } catch (err) {}
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting phone number:', error);
+        return null;
+    }
+}
+
+// ============================================
+// WHATSAPP SETUP WITH PERSISTENT MONITORING
 // ============================================
 async function setupWhatsApp() {
     console.log('\n📱 Starting WhatsApp client...');
+    
+    // Clear session on each start to avoid stale connections
+    const sessionPath = '/app/session-data';
+    if (fs.existsSync(sessionPath)) {
+        console.log('🗑️ Clearing old session data...');
+        try {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (err) {}
+    }
     
     const client = new Client({
         authStrategy: new LocalAuth({
@@ -196,69 +244,92 @@ async function setupWhatsApp() {
         currentQR = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
         console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
         qrcode.generate(qr, { small: true });
+        console.log('\n1. Open WhatsApp on your phone');
+        console.log('2. Go to Settings → Linked Devices');
+        console.log('3. Tap "Link a Device"');
+        console.log('4. Scan the QR code above\n');
     });
     
     client.on('ready', async () => {
         console.log('\n' + '='.repeat(50));
         console.log('✅ WHATSAPP BOT IS READY!');
         console.log('='.repeat(50));
-        console.log('📡 Monitoring for NEW contacts...');
+        
+        // Get and display bot's own number
+        let myNumber = 'unknown';
+        try {
+            const info = await client.info;
+            myNumber = info.wid.user;
+            console.log(`🤖 Bot connected as: ${myNumber}`);
+        } catch (err) {}
+        
+        console.log('📡 Monitoring for NEW contacts continuously...');
         console.log('='.repeat(50) + '\n');
+        
+        // Heartbeat every 3 minutes to confirm bot is alive
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        heartbeatInterval = setInterval(() => {
+            const minutesSinceLastMsg = Math.round((Date.now() - lastMessageTime) / 60000);
+            console.log(`💓 Bot alive - ${new Date().toLocaleTimeString()} - Monitoring ${knownContacts.size} contacts - Last message ${minutesSinceLastMsg} min ago`);
+        }, 180000);
     });
     
+    // Main message handler with safe error catching
     client.on('message', async (message) => {
         try {
+            // Skip status broadcasts and group notifications
             if (message.from === 'status@broadcast') return;
             
-            // Get contact info
-            const contact = await message.getContact();
+            lastMessageTime = Date.now();
             
-            // IMPORTANT: Get the phone number from the contact object
-            // This is the correct way to get the actual phone number
-            let phoneNumber = null;
+            // Get bot's own number for comparison
+            let myNumber = 'unknown';
+            try {
+                const info = await client.info;
+                myNumber = info.wid.user;
+            } catch (err) {}
             
-            // Method 1: contact.number (this should be the phone number)
-            if (contact.number) {
-                let raw = contact.number;
-                if (raw.includes('@')) raw = raw.split('@')[0];
-                phoneNumber = raw.replace(/[^0-9]/g, '');
+            // Extract phone number using reliable method
+            let phoneNumber = await extractPhoneNumber(client, message, myNumber);
+            
+            // Get contact name safely
+            let contactName = phoneNumber || 'Unknown';
+            try {
+                const contact = await message.getContact();
+                contactName = contact.pushname || contact.name || phoneNumber || 'Unknown';
+            } catch (err) {
+                console.log('Could not fetch contact name');
             }
             
-            // Method 2: contact.id.user
-            if (!phoneNumber && contact.id && contact.id.user) {
-                let raw = contact.id.user;
-                if (raw.includes('@')) raw = raw.split('@')[0];
-                phoneNumber = raw.replace(/[^0-9]/g, '');
-            }
-            
-            // Method 3: message.from
-            if (!phoneNumber && message.from) {
-                let raw = message.from;
-                if (raw.includes('@')) raw = raw.split('@')[0];
-                phoneNumber = raw.replace(/[^0-9]/g, '');
-            }
-            
-            // Validate - phone number should start with country code and be reasonable length
-            if (!phoneNumber || phoneNumber.length < 9 || phoneNumber.length > 15) {
-                console.log(`⚠️ Invalid phone number format: ${phoneNumber}`);
+            if (!phoneNumber) {
+                console.log(`⚠️ Could not extract phone number for message from: ${message.from}`);
                 return;
             }
             
-            const contactName = contact.pushname || contact.name || phoneNumber;
-            
-            console.log(`\n📨 Message from: ${contactName}`);
-            console.log(`📞 Phone number: ${phoneNumber}`);
-            console.log(`📝 Message: "${message.body?.substring(0, 100) || ''}"`);
+            console.log(`\n📨 Message from: ${contactName} (${phoneNumber})`);
+            if (message.body) {
+                console.log(`📝 Message: "${message.body.substring(0, 100)}"`);
+            }
             
             await saveNewContact(contactName, phoneNumber);
             
         } catch (error) {
+            // Catch errors per message so one bad message doesn't break everything
             console.error('Message processing error:', error);
         }
     });
     
     client.on('disconnected', (reason) => {
         console.log('\n⚠️ Disconnected:', reason);
+        console.log('🔄 Bot disconnected. Railway will restart automatically.');
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+    });
+    
+    client.on('auth_failure', (msg) => {
+        console.error('❌ Authentication failed:', msg);
     });
     
     await client.initialize();
@@ -286,8 +357,16 @@ async function main() {
     await setupWhatsApp();
 }
 
+// Cleanup on exit
 process.on('SIGINT', () => {
     console.log('\n\n🛑 Shutting down bot...');
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('\n\n🛑 Bot terminated...');
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
     process.exit(0);
 });
 
