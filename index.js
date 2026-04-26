@@ -201,13 +201,35 @@ async function saveNewContact(contactName, phoneNumber) {
     try {
         const date = new Date().toLocaleDateString('ar-EG');
         
-        // Add row with the contact data
-        await googleSheet.addRow({
-            'رقم': '',
-            'الاسم': contactName,
-            'الموبايل': phoneNumber,
-            'التاريخ': date
-        });
+        // Find the next empty row after the last phone number
+        const rows = await googleSheet.getRows();
+        let nextRowIndex = rows.length; // Default to end
+        
+        // Find the first empty row after the last phone number
+        for (let i = 0; i < rows.length; i++) {
+            const phone = rows[i].get('الموبايل');
+            if (!phone || phone.trim() === '') {
+                nextRowIndex = i;
+                break;
+            }
+        }
+        
+        if (nextRowIndex < rows.length) {
+            // Use existing empty row
+            const emptyRow = rows[nextRowIndex];
+            emptyRow.set('الاسم', contactName);
+            emptyRow.set('الموبايل', phoneNumber);
+            emptyRow.set('التاريخ', date);
+            await emptyRow.save();
+        } else {
+            // Add new row at the end
+            await googleSheet.addRow({
+                'رقم': '',
+                'الاسم': contactName,
+                'الموبايل': phoneNumber,
+                'التاريخ': date
+            });
+        }
         
         knownContacts.add(phoneNumber.trim());
         console.log(`✅ NEW CONTACT SAVED: ${contactName} (${phoneNumber}) - ${date}`);
@@ -217,7 +239,6 @@ async function saveNewContact(contactName, phoneNumber) {
         return false;
     }
 }
-
 function extractPhoneNumber(contact) {
     if (contact.number) return contact.number;
     if (contact.id && contact.id.user) return contact.id.user;
