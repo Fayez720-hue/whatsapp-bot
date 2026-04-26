@@ -24,32 +24,27 @@ healthApp.get('/qr', (req, res) => {
         res.send(`
             <!DOCTYPE html>
             <html>
-            <head>
-                <title>WhatsApp QR Code</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
-                <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f0f0f0; }
-                    .qr-container { background: white; padding: 30px; border-radius: 10px; display: inline-block; }
-                    img { max-width: 300px; }
-                    .instructions { margin-top: 20px; color: #666; }
-                </style>
+            <head><title>WhatsApp QR Code</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { text-align: center; padding: 50px; font-family: Arial; }
+                .qr-container { background: white; padding: 30px; border-radius: 10px; display: inline-block; }
+                img { max-width: 300px; }
+            </style>
             </head>
             <body>
                 <div class="qr-container">
                     <h2>Scan with WhatsApp</h2>
                     <img src="${currentQR}" alt="QR Code">
-                    <div class="instructions">
-                        <p>1. Open WhatsApp on your phone</p>
-                        <p>2. Go to Settings → Linked Devices</p>
-                        <p>3. Tap "Link a Device"</p>
-                        <p>4. Scan this QR code</p>
-                    </div>
+                    <p>1. Open WhatsApp → Settings → Linked Devices</p>
+                    <p>2. Tap "Link a Device"</p>
+                    <p>3. Scan this QR code</p>
                 </div>
             </body>
             </html>
         `);
     } else {
-        res.send('<h2>Waiting for QR code...</h2><p>Bot is starting up. Refresh in a few seconds.</p>');
+        res.send('<h2>Waiting for QR code...</h2><p>Bot starting up. Refresh in a few seconds.</p>');
     }
 });
 
@@ -63,10 +58,6 @@ healthApp.listen(healthPort, () => {
 const SHEET_ID = process.env.SHEET_ID || '1oZMWwvTHATw4Eoehm6URoysFwp3ylm8Bb0udy-qG1zg';
 let googleSheet = null;
 const knownContacts = new Set();
-
-// Heartbeat to monitor bot status
-let heartbeatInterval = null;
-let lastMessageTime = Date.now();
 
 // ============================================
 // GOOGLE SHEETS SETUP
@@ -154,88 +145,10 @@ async function saveNewContact(contactName, phoneNumber) {
 }
 
 // ============================================
-// VALIDATE PHONE NUMBER
-// ============================================
-function isValidPhoneNumber(num) {
-    // Reject numbers starting with '1' or those too short/long
-    // Real phone numbers have country codes (e.g., 20 for Egypt)
-    return num && num.length >= 9 && num.length <= 15 && !num.startsWith('1');
-}
-
-// ============================================
-// EXTRACT PHONE NUMBER RELIABLY
-// ============================================
-async function extractPhoneNumber(client, message) {
-    try {
-        let myNumber = 'unknown';
-        try {
-            const info = await client.info;
-            myNumber = info.wid.user;
-        } catch (err) {}
-        
-        let senderNumber = null;
-        
-        // Check if it's the bot itself
-        if (message.from && message.from.includes(myNumber)) {
-            senderNumber = myNumber;
-        } else {
-            try {
-                // ATTEMPT 1: Try to get the contact object
-                const contact = await client.getContactById(message.from);
-                // For Business accounts, contact.number is often undefined
-                if (contact.number && isValidPhoneNumber(contact.number.replace(/[^0-9]/g, ''))) {
-                    senderNumber = contact.number.replace(/[^0-9]/g, '');
-                } else if (contact.id && contact.id.user && isValidPhoneNumber(contact.id.user.split('@')[0].replace(/[^0-9]/g, ''))) {
-                    senderNumber = contact.id.user.split('@')[0].replace(/[^0-9]/g, '');
-                } else {
-                    // Fallback to parsing the string
-                    senderNumber = (message.author || message.from).split('@')[0].replace(/[^0-9]/g, '');
-                }
-            } catch (e) {
-                // ATTEMPT 2: Fallback to parsing the string
-                senderNumber = (message.author || message.from).split('@')[0].replace(/[^0-9]/g, '');
-            }
-        }
-        
-        // Validate the number
-        if (senderNumber && isValidPhoneNumber(senderNumber)) {
-            return senderNumber;
-        }
-        
-        // ATTEMPT 3: Try from chat as last resort
-        try {
-            const chat = await message.getChat();
-            if (chat && !chat.isGroup && chat.id && chat.id.user) {
-                let cleaned = chat.id.user.split('@')[0].replace(/[^0-9]/g, '');
-                if (cleaned && isValidPhoneNumber(cleaned)) {
-                    return cleaned;
-                }
-            }
-        } catch (err) {}
-        
-        console.log(`⚠️ Could not extract valid phone number from: ${message.from}`);
-        return null;
-        
-    } catch (error) {
-        console.error('Error extracting phone number:', error);
-        return null;
-    }
-}
-
-// ============================================
-// WHATSAPP SETUP WITH PERSISTENT MONITORING
+// WHATSAPP SETUP - SIMPLIFIED
 // ============================================
 async function setupWhatsApp() {
     console.log('\n📱 Starting WhatsApp client...');
-    
-    // Clear session on each start to avoid stale connections
-    const sessionPath = '/app/session-data';
-    if (fs.existsSync(sessionPath)) {
-        console.log('🗑️ Clearing old session data...');
-        try {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-        } catch (err) {}
-    }
     
     const client = new Client({
         authStrategy: new LocalAuth({
@@ -259,60 +172,34 @@ async function setupWhatsApp() {
     
     client.on('qr', (qr) => {
         currentQR = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
-        console.log(`\n📱 QR Code available at: https://your-app.railway.app/qr\n`);
+        console.log(`\n📱 SCAN THIS QR CODE:`);
         qrcode.generate(qr, { small: true });
-        console.log('\n1. Open WhatsApp on your phone');
-        console.log('2. Go to Settings → Linked Devices');
-        console.log('3. Tap "Link a Device"');
-        console.log('4. Scan the QR code above\n');
+        console.log(`\n📱 Or visit: https://your-app.railway.app/qr\n`);
     });
     
-    client.on('ready', async () => {
-        console.log('\n' + '='.repeat(50));
-        console.log('✅ WHATSAPP BOT IS READY!');
-        console.log('='.repeat(50));
-        
-        // Get and display bot's own number
-        try {
-            const info = await client.info;
-            console.log(`🤖 Bot connected as: ${info.wid.user}`);
-        } catch (err) {}
-        
-        console.log('📡 Monitoring for NEW contacts continuously...');
-        console.log('='.repeat(50) + '\n');
-        
-        // Heartbeat every 3 minutes to confirm bot is alive
-        if (heartbeatInterval) clearInterval(heartbeatInterval);
-        heartbeatInterval = setInterval(() => {
-            const minutesSinceLastMsg = Math.round((Date.now() - lastMessageTime) / 60000);
-            console.log(`💓 Bot alive - ${new Date().toLocaleTimeString()} - Monitoring ${knownContacts.size} contacts - Last message ${minutesSinceLastMsg} min ago`);
-        }, 180000);
+    client.on('ready', () => {
+        console.log('\n✅ WHATSAPP BOT IS READY!');
+        console.log('📡 Waiting for messages...\n');
     });
     
-    // Main message handler with safe error catching
+    // SIMPLE MESSAGE HANDLER - Get number directly from message.from
     client.on('message', async (message) => {
         try {
-            // Skip status broadcasts and group notifications
+            // Skip status messages
             if (message.from === 'status@broadcast') return;
             
-            lastMessageTime = Date.now();
+            // Extract phone number - remove @c.us suffix
+            let phoneNumber = message.from;
+            if (phoneNumber.includes('@')) {
+                phoneNumber = phoneNumber.split('@')[0];
+            }
             
-            // Extract phone number using reliable method
-            let phoneNumber = await extractPhoneNumber(client, message);
-            
-            // Get contact name safely
-            let contactName = phoneNumber || 'Unknown';
+            // Get contact name
+            let contactName = phoneNumber;
             try {
                 const contact = await message.getContact();
-                contactName = contact.pushname || contact.name || phoneNumber || 'Unknown';
-            } catch (err) {
-                console.log('Could not fetch contact name');
-            }
-            
-            if (!phoneNumber) {
-                console.log(`⚠️ Could not extract phone number from: ${message.from}`);
-                return;
-            }
+                contactName = contact.pushname || contact.name || phoneNumber;
+            } catch (err) {}
             
             console.log(`\n📨 Message from: ${contactName} (${phoneNumber})`);
             if (message.body) {
@@ -322,22 +209,12 @@ async function setupWhatsApp() {
             await saveNewContact(contactName, phoneNumber);
             
         } catch (error) {
-            // Catch errors per message so one bad message doesn't break everything
-            console.error('Message processing error:', error);
+            console.error('Error:', error.message);
         }
     });
     
     client.on('disconnected', (reason) => {
-        console.log('\n⚠️ Disconnected:', reason);
-        console.log('🔄 Bot disconnected. Railway will restart automatically.');
-        if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-            heartbeatInterval = null;
-        }
-    });
-    
-    client.on('auth_failure', (msg) => {
-        console.error('❌ Authentication failed:', msg);
+        console.log('⚠️ Disconnected:', reason);
     });
     
     await client.initialize();
@@ -348,33 +225,21 @@ async function setupWhatsApp() {
 // MAIN
 // ============================================
 async function main() {
-    console.log('\n' + '='.repeat(50));
-    console.log('🚀 WHATSAPP BOT - RAILWAY DEPLOYMENT');
-    console.log('='.repeat(50));
-    console.log(`Started: ${new Date().toLocaleString()}`);
-    console.log('='.repeat(50) + '\n');
+    console.log('\n🚀 STARTING WHATSAPP BOT\n');
     
     console.log('📊 Connecting to Google Sheets...');
     const sheetConnected = await setupGoogleSheet();
     
     if (!sheetConnected) {
-        console.log('\n⚠️ Cannot continue without Google Sheets');
+        console.log('⚠️ Cannot continue without Google Sheets');
         return;
     }
     
     await setupWhatsApp();
 }
 
-// Cleanup on exit
 process.on('SIGINT', () => {
-    console.log('\n\n🛑 Shutting down bot...');
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('\n\n🛑 Bot terminated...');
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    console.log('\n🛑 Shutting down...');
     process.exit(0);
 });
 
