@@ -239,6 +239,11 @@ async function setupWhatsApp() {
                 '--disable-dev-shm-usage',
                 '--disable-gpu'
             ]
+        },
+        // Add these to bypass the version cache issue
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.51.html',
         }
     });
     
@@ -285,7 +290,6 @@ async function setupWhatsApp() {
     await client.initialize();
     return client;
 }
-
 async function main() {
     console.log('\n' + '='.repeat(50));
     console.log('🚀 WHATSAPP BOT - RAILWAY DEPLOYMENT');
