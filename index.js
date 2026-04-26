@@ -120,6 +120,14 @@ async function setupGoogleSheet() {
             private_key: creds.private_key,
         });
         await doc.loadInfo();
+
+// ========== DEBUG: LIST ALL TABS ==========
+console.log('📑 Available tabs in your Google Sheet:');
+doc.sheetsByIndex.forEach((sheet, index) => {
+    console.log(`   ${index + 1}. "${sheet.title}"`);
+});
+// ========== END DEBUG ==========
+
         
         const TARGET_TAB_NAME = 'مبيعات';
         
