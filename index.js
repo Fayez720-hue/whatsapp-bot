@@ -121,41 +121,41 @@ async function setupGoogleSheet() {
         });
         await doc.loadInfo();
 
-// ========== DEBUG: LIST ALL TABS ==========
-console.log('📑 Available tabs in your Google Sheet:');
-doc.sheetsByIndex.forEach((sheet, index) => {
-    console.log(`   ${index + 1}. "${sheet.title}"`);
-});
-// ========== END DEBUG ==========
-
+        // ========== SHOW WHICH SHEET WE'RE CONNECTED TO ==========
+        console.log(`📊 Connected to sheet: "${doc.title}"`);
+        console.log(`📊 Sheet URL: https://docs.google.com/spreadsheets/d/${SHEET_ID}`);
+        console.log(`📊 Sheet ID: ${SHEET_ID}`);
         
-        const TARGET_TAB_NAME = 'مبيعات';
-        
-        let sheet = doc.sheetsByTitle[TARGET_TAB_NAME];
-        
-        if (!sheet) {
-            console.log(`📊 Tab "${TARGET_TAB_NAME}" not found, using first tab`);
-            sheet = doc.sheetsByIndex[0];
+        // ========== LIST ALL AVAILABLE TABS ==========
+        console.log('📑 Available tabs in this sheet:');
+        for (let i = 0; i < doc.sheetsByIndex.length; i++) {
+            const sheetTab = doc.sheetsByIndex[i];
+            console.log(`   ${i + 1}. "${sheetTab.title}"`);
         }
         
-        if (!sheet) {
-            sheet = await doc.addSheet({ title: TARGET_TAB_NAME });
-            console.log(`📊 Created new worksheet: ${TARGET_TAB_NAME}`);
-        }
+        // ========== JUST USE THE FIRST TAB ==========
+        let sheet = doc.sheetsByIndex[0];
+        console.log(`📊 Using tab: "${sheet.title}"`);
         
-        console.log(`📊 Using tab: ${sheet.title}`);
-        
+        // Check if the sheet has the correct headers
         const rows = await sheet.getRows();
-        if (rows.length === 0) {
+        
+        // If sheet is empty OR doesn't have the phone column, set headers
+        if (rows.length === 0 || (rows.length > 0 && !rows[0].hasOwnProperty('الموبايل'))) {
+            // Clear existing headers if any
+            if (rows.length > 0 && sheet.headerValues.length > 0) {
+                console.log('📋 Updating headers...');
+            }
             await sheet.setHeaderRow([
                 'رقم',
                 'الاسم',
                 'الموبايل',
                 'التاريخ'
             ]);
-            console.log('📋 Added headers');
+            console.log('📋 Set headers: رقم, الاسم, الموبايل, التاريخ');
         }
         
+        // Load existing contacts
         const existingRows = await sheet.getRows();
         for (const row of existingRows) {
             const phoneNumber = row['الموبايل'];
@@ -200,24 +200,14 @@ async function saveNewContact(contactName, phoneNumber) {
     
     try {
         const date = new Date().toLocaleDateString('ar-EG');
-        const targetRowIndex = await findLastRowWithData();
-        if (targetRowIndex === null) return false;
         
-        const rows = await googleSheet.getRows();
-        
-        if (targetRowIndex < rows.length) {
-            const existingRow = rows[targetRowIndex];
-            if (!existingRow['الموبايل'] || existingRow['الموبايل'] === '') {
-                existingRow['الاسم'] = contactName;
-                existingRow['الموبايل'] = phoneNumber;
-                existingRow['التاريخ'] = date;
-                await existingRow.save();
-            } else {
-                await googleSheet.addRow({ 'رقم': '', 'الاسم': contactName, 'الموبايل': phoneNumber, 'التاريخ': date });
-            }
-        } else {
-            await googleSheet.addRow({ 'رقم': '', 'الاسم': contactName, 'الموبايل': phoneNumber, 'التاريخ': date });
-        }
+        // Add row with the contact data
+        await googleSheet.addRow({
+            'رقم': '',
+            'الاسم': contactName,
+            'الموبايل': phoneNumber,
+            'التاريخ': date
+        });
         
         knownContacts.add(phoneNumber.trim());
         console.log(`✅ NEW CONTACT SAVED: ${contactName} (${phoneNumber}) - ${date}`);
@@ -273,7 +263,7 @@ async function setupWhatsApp() {
         console.log('✅ WHATSAPP BOT IS READY!');
         console.log('='.repeat(50));
         console.log('📡 Monitoring for NEW contacts only...');
-        console.log('📊 New contacts will be added AFTER the last entry in Column C');
+        console.log('📊 New contacts will be saved to the first tab in your sheet');
         console.log('\n💡 To stop the bot: Press Ctrl+C\n');
     });
     
